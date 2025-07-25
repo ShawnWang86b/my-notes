@@ -1,0 +1,136 @@
+---
+title: "Advanced React Hooks: Beyond useState and useEffect"
+description: "Explore powerful React hooks like useReducer, useContext, and custom hooks to build better applications"
+date: "2024-01-25"
+author: "Tech Blogger"
+tags: ["react", "hooks", "javascript", "frontend"]
+image: "/next.svg"
+---
+
+# Advanced React Hooks: Beyond useState and useEffect
+
+While useState and useEffect are the most commonly used React hooks, there are many more powerful hooks that can help you build better applications.
+
+## useReducer: Managing Complex State
+
+When state logic becomes complex, useReducer is often a better choice than useState:
+
+```jsx
+const initialState = { count: 0, history: [] };
+
+function reducer(state, action) {
+  switch (action.type) {
+    case 'increment':
+      return {
+        count: state.count + 1,
+        history: [...state.history, 'increment']
+      };
+    case 'decrement':
+      return {
+        count: state.count - 1,
+        history: [...state.history, 'decrement']
+      };
+    default:
+      throw new Error();
+  }
+}
+
+function Counter() {
+  const [state, dispatch] = useReducer(reducer, initialState);
+  return (
+    <div>
+      Count: {state.count}
+      <button onClick={() => dispatch({ type: 'increment' })}>+</button>
+      <button onClick={() => dispatch({ type: 'decrement' })}>-</button>
+    </div>
+  );
+}
+```
+
+## useContext: Global State Management
+
+useContext helps you avoid prop drilling:
+
+```jsx
+const ThemeContext = createContext();
+
+function App() {
+  const [theme, setTheme] = useState('light');
+  
+  return (
+    <ThemeContext.Provider value={{ theme, setTheme }}>
+      <Header />
+      <Main />
+    </ThemeContext.Provider>
+  );
+}
+
+function Header() {
+  const { theme, setTheme } = useContext(ThemeContext);
+  return (
+    <header className={`header-${theme}`}>
+      <button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
+        Toggle Theme
+      </button>
+    </header>
+  );
+}
+```
+
+## Custom Hooks: Reusable Logic
+
+Create custom hooks to share stateful logic:
+
+```jsx
+function useLocalStorage(key, initialValue) {
+  const [storedValue, setStoredValue] = useState(() => {
+    try {
+      const item = window.localStorage.getItem(key);
+      return item ? JSON.parse(item) : initialValue;
+    } catch (error) {
+      return initialValue;
+    }
+  });
+
+  const setValue = (value) => {
+    try {
+      setStoredValue(value);
+      window.localStorage.setItem(key, JSON.stringify(value));
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+  return [storedValue, setValue];
+}
+```
+
+## Performance Hooks
+
+### useMemo and useCallback
+
+Optimize expensive calculations and prevent unnecessary re-renders:
+
+```jsx
+function ExpensiveComponent({ items, filter }) {
+  const filteredItems = useMemo(() => {
+    return items.filter(item => item.includes(filter));
+  }, [items, filter]);
+
+  const handleClick = useCallback((id) => {
+    // Handle click logic
+  }, []);
+
+  return (
+    <div>
+      {filteredItems.map(item => (
+        <Item key={item.id} onClick={handleClick} />
+      ))}
+    </div>
+  );
+}
+```
+
+## Conclusion
+
+Advanced React hooks provide powerful ways to manage state, share logic, and optimize performance. Master these patterns to build more maintainable and efficient React applications. 

@@ -1,0 +1,432 @@
+---
+title: "Web Performance Optimization: A Complete Guide"
+description: "Master web performance optimization techniques to build faster, more efficient websites"
+date: "2024-02-20"
+author: "Tech Blogger"
+tags: ["performance", "web-development", "optimization", "core-web-vitals"]
+image: "/vercel.svg"
+---
+
+# Web Performance Optimization: A Complete Guide
+
+Web performance directly impacts user experience, SEO rankings, and business metrics. Here's how to optimize your website for speed.
+
+## Core Web Vitals
+
+Focus on the three key metrics that Google considers:
+
+### Largest Contentful Paint (LCP)
+Optimize the loading of your largest content element:
+
+```html
+<!-- Preload critical resources -->
+<link rel="preload" href="/fonts/main.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/images/hero.jpg" as="image">
+
+<!-- Optimize images -->
+<img 
+  src="/images/hero.jpg"
+  alt="Hero image"
+  loading="eager"
+  fetchpriority="high"
+  width="1200"
+  height="600"
+>
+```
+
+### First Input Delay (FID) / Interaction to Next Paint (INP)
+Optimize JavaScript execution:
+
+```javascript
+// Break up long tasks
+function processLargeDataset(data) {
+  const chunkSize = 100;
+  let index = 0;
+  
+  function processChunk() {
+    const endIndex = Math.min(index + chunkSize, data.length);
+    
+    for (; index < endIndex; index++) {
+      // Process item
+      processItem(data[index]);
+    }
+    
+    if (index < data.length) {
+      // Yield control back to browser
+      setTimeout(processChunk, 0);
+    }
+  }
+  
+  processChunk();
+}
+
+// Use web workers for heavy computation
+const worker = new Worker('heavy-computation.js');
+worker.postMessage(data);
+worker.onmessage = (e) => {
+  const result = e.data;
+  updateUI(result);
+};
+```
+
+### Cumulative Layout Shift (CLS)
+Prevent layout shifts:
+
+```css
+/* Reserve space for images */
+.image-container {
+  aspect-ratio: 16 / 9;
+  background: #f0f0f0;
+}
+
+.image-container img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Reserve space for ads */
+.ad-container {
+  min-height: 250px;
+  background: #f9f9f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Use transform for animations */
+.slide-in {
+  transform: translateX(-100%);
+  transition: transform 0.3s ease;
+}
+
+.slide-in.active {
+  transform: translateX(0);
+}
+```
+
+## Resource Optimization
+
+### Image Optimization
+
+```html
+<!-- Use modern formats -->
+<picture>
+  <source srcset="/images/hero.avif" type="image/avif">
+  <source srcset="/images/hero.webp" type="image/webp">
+  <img src="/images/hero.jpg" alt="Hero image" width="1200" height="600">
+</picture>
+
+<!-- Responsive images -->
+<img
+  src="/images/product-400.jpg"
+  srcset="
+    /images/product-400.jpg 400w,
+    /images/product-800.jpg 800w,
+    /images/product-1200.jpg 1200w
+  "
+  sizes="(max-width: 768px) 400px, (max-width: 1200px) 800px, 1200px"
+  alt="Product image"
+  loading="lazy"
+>
+
+<!-- Optimize for different viewports -->
+<picture>
+  <source 
+    media="(max-width: 768px)" 
+    srcset="/images/mobile-hero.jpg"
+  >
+  <source 
+    media="(max-width: 1200px)" 
+    srcset="/images/tablet-hero.jpg"
+  >
+  <img src="/images/desktop-hero.jpg" alt="Hero">
+</picture>
+```
+
+### Font Optimization
+
+```css
+/* Preload critical fonts */
+/* In HTML head: */
+/* <link rel="preload" href="/fonts/inter.woff2" as="font" type="font/woff2" crossorigin> */
+
+@font-face {
+  font-family: 'Inter';
+  src: url('/fonts/inter.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap; /* Show fallback font while loading */
+}
+
+/* Use system fonts as fallback */
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+/* Subset fonts */
+/* Only load characters you need */
+/* <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&text=HelloWrd&display=swap" rel="stylesheet"> */
+```
+
+## JavaScript Optimization
+
+### Code Splitting
+
+```javascript
+// Route-based code splitting
+import { lazy, Suspense } from 'react';
+
+const Dashboard = lazy(() => import('./Dashboard'));
+const Profile = lazy(() => import('./Profile'));
+
+function App() {
+  return (
+    <Router>
+      <Suspense fallback={<div>Loading...</div>}>
+        <Routes>
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/profile" element={<Profile />} />
+        </Routes>
+      </Suspense>
+    </Router>
+  );
+}
+
+// Component-based code splitting
+const HeavyComponent = lazy(() => 
+  import('./HeavyComponent').then(module => ({
+    default: module.HeavyComponent
+  }))
+);
+
+// Dynamic imports
+async function loadFeature() {
+  const { feature } = await import('./advanced-feature');
+  feature.initialize();
+}
+```
+
+### Tree Shaking
+
+```javascript
+// Good: Import only what you need
+import { debounce } from 'lodash-es';
+
+// Bad: Imports entire library
+import _ from 'lodash';
+
+// Use ES modules
+export const utils = {
+  formatDate,
+  validateEmail,
+  debounce
+};
+
+// Mark side-effect-free modules
+// In package.json:
+{
+  "sideEffects": false
+}
+
+// Or mark specific files as having side effects:
+{
+  "sideEffects": ["./src/polyfills.js", "*.css"]
+}
+```
+
+## Caching Strategies
+
+### HTTP Caching
+
+```javascript
+// Next.js API routes
+export async function GET(request) {
+  const data = await fetchData();
+  
+  return new Response(JSON.stringify(data), {
+    headers: {
+      'Content-Type': 'application/json',
+      'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400'
+    }
+  });
+}
+
+// Static assets caching (nginx)
+/*
+location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg)$ {
+  expires 1y;
+  add_header Cache-Control "public, immutable";
+}
+*/
+```
+
+### Service Worker Caching
+
+```javascript
+// sw.js
+const CACHE_NAME = 'v1';
+const urlsToCache = [
+  '/',
+  '/styles/main.css',
+  '/scripts/main.js'
+];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(urlsToCache))
+  );
+});
+
+self.addEventListener('fetch', (event) => {
+  event.respondWith(
+    caches.match(event.request)
+      .then((response) => {
+        // Return cached version or fetch from network
+        return response || fetch(event.request);
+      })
+  );
+});
+
+// Register service worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js');
+}
+```
+
+## Network Optimization
+
+### Resource Hints
+
+```html
+<!-- DNS prefetch for external domains -->
+<link rel="dns-prefetch" href="//fonts.googleapis.com">
+<link rel="dns-prefetch" href="//analytics.google.com">
+
+<!-- Preconnect for critical third-party origins -->
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+<!-- Prefetch likely next pages -->
+<link rel="prefetch" href="/about">
+<link rel="prefetch" href="/contact">
+
+<!-- Preload critical resources -->
+<link rel="preload" href="/critical.css" as="style">
+<link rel="preload" href="/hero.jpg" as="image">
+```
+
+### Compression
+
+```javascript
+// Express.js compression
+const compression = require('compression');
+app.use(compression());
+
+// Brotli compression (nginx)
+/*
+location ~* \.(js|css|html|xml|txt)$ {
+  brotli on;
+  brotli_comp_level 6;
+  brotli_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+}
+*/
+```
+
+## Monitoring and Measurement
+
+### Performance Monitoring
+
+```javascript
+// Web Vitals measurement
+import { onCLS, onFID, onFCP, onLCP, onTTFB } from 'web-vitals';
+
+function sendToAnalytics(metric) {
+  // Send to your analytics service
+  gtag('event', metric.name, {
+    value: Math.round(metric.name === 'CLS' ? metric.value * 1000 : metric.value),
+    event_category: 'Web Vitals',
+    event_label: metric.id,
+    non_interaction: true,
+  });
+}
+
+onCLS(sendToAnalytics);
+onFID(sendToAnalytics);
+onFCP(sendToAnalytics);
+onLCP(sendToAnalytics);
+onTTFB(sendToAnalytics);
+
+// Performance Observer
+const observer = new PerformanceObserver((list) => {
+  for (const entry of list.getEntries()) {
+    if (entry.entryType === 'navigation') {
+      console.log('Page load time:', entry.loadEventEnd - entry.loadEventStart);
+    }
+  }
+});
+
+observer.observe({ entryTypes: ['navigation', 'resource'] });
+```
+
+### Performance Budget
+
+```javascript
+// webpack-bundle-analyzer for bundle analysis
+const BundleAnalyzerPlugin = require('webpack-bundle-analyzer').BundleAnalyzerPlugin;
+
+module.exports = {
+  plugins: [
+    new BundleAnalyzerPlugin({
+      analyzerMode: 'static',
+      reportFilename: 'bundle-report.html',
+      openAnalyzer: false,
+    })
+  ],
+  performance: {
+    maxAssetSize: 250000, // 250kb
+    maxEntrypointSize: 250000,
+    hints: 'error'
+  }
+};
+
+// Lighthouse CI configuration
+// lighthouse.json
+{
+  "ci": {
+    "assert": {
+      "assertions": {
+        "categories:performance": ["error", { "minScore": 0.9 }],
+        "categories:accessibility": ["error", { "minScore": 0.9 }]
+      }
+    }
+  }
+}
+```
+
+## Best Practices Checklist
+
+### Critical Rendering Path
+- [ ] Minimize critical resources
+- [ ] Minimize critical bytes
+- [ ] Minimize critical path length
+- [ ] Inline critical CSS
+- [ ] Eliminate render-blocking resources
+
+### Loading Optimization
+- [ ] Use appropriate image formats (WebP, AVIF)
+- [ ] Implement lazy loading
+- [ ] Optimize font loading
+- [ ] Minimize JavaScript bundles
+- [ ] Use HTTP/2 server push strategically
+
+### Runtime Performance
+- [ ] Minimize main thread work
+- [ ] Avoid large layout shifts
+- [ ] Optimize animations (use transform/opacity)
+- [ ] Implement efficient state management
+- [ ] Use virtualization for large lists
+
+## Conclusion
+
+Web performance optimization is an ongoing process that requires attention to multiple aspects: from initial loading to runtime performance. Focus on Core Web Vitals, implement proper caching strategies, and continuously monitor your metrics to provide the best user experience. 

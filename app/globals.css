@@ -161,3 +161,44 @@
     letter-spacing: var(--tracking-normal);
   }
 }
+
+/* Shiki syntax highlighting styles */
+pre.shiki {
+  @apply rounded-md border border-secondary p-4 overflow-x-auto relative;
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  margin-top:0.875rem;
+  margin-bottom: 0.875rem;
+}
+
+pre.shiki code {
+  @apply !bg-transparent !p-0 !text-sm;
+  font-family: inherit;
+}
+
+/* Dark theme for shiki */
+.dark pre.shiki {
+  @apply !bg-gray-900 border-gray-700;
+}
+
+/* Override prose styles for code blocks */
+.prose pre.shiki {
+  @apply !bg-gray-50 !text-gray-900;
+}
+
+.prose .dark pre.shiki {
+  @apply !bg-gray-900 !text-gray-100;
+}
+
+/* Code block copy button styling */
+.prose div:has(pre.shiki) {
+  @apply relative;
+}
+
+/* Ensure copy button is visible on hover */
+.prose pre.shiki:hover + button,
+.prose pre.shiki + button:focus {
+  @apply opacity-100;
+}
+

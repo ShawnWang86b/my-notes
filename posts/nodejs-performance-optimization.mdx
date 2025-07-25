@@ -1,0 +1,328 @@
+---
+title: "Node.js Performance Optimization: Tips and Tricks"
+description: "Learn how to optimize Node.js applications for better performance and scalability"
+date: "2024-02-10"
+author: "Tech Blogger"
+tags: ["nodejs", "javascript", "performance", "backend"]
+image: "/window.svg"
+---
+
+# Node.js Performance Optimization: Tips and Tricks
+
+Node.js applications can handle high concurrency, but proper optimization is crucial for peak performance.
+
+## Event Loop Optimization
+
+Understanding and optimizing the event loop is fundamental:
+
+```javascript
+// Bad: Blocking the event loop
+function heavyComputation() {
+  let result = 0;
+  for (let i = 0; i < 10000000; i++) {
+    result += i;
+  }
+  return result;
+}
+
+// Good: Break up heavy work
+function heavyComputationAsync(callback) {
+  let result = 0;
+  let i = 0;
+  
+  function processChunk() {
+    const end = Math.min(i + 100000, 10000000);
+    
+    for (; i < end; i++) {
+      result += i;
+    }
+    
+    if (i < 10000000) {
+      setImmediate(processChunk);
+    } else {
+      callback(result);
+    }
+  }
+  
+  setImmediate(processChunk);
+}
+```
+
+## Memory Management
+
+Prevent memory leaks and optimize garbage collection:
+
+```javascript
+// Memory leak example - avoid this
+const cache = new Map();
+
+function addToCache(key, value) {
+  cache.set(key, value);
+  // Never cleanup - memory leak!
+}
+
+// Better: Use LRU cache with limits
+class LRUCache {
+  constructor(maxSize = 1000) {
+    this.maxSize = maxSize;
+    this.cache = new Map();
+  }
+  
+  get(key) {
+    if (this.cache.has(key)) {
+      const value = this.cache.get(key);
+      this.cache.delete(key);
+      this.cache.set(key, value);
+      return value;
+    }
+    return null;
+  }
+  
+  set(key, value) {
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    } else if (this.cache.size >= this.maxSize) {
+      const firstKey = this.cache.keys().next().value;
+      this.cache.delete(firstKey);
+    }
+    this.cache.set(key, value);
+  }
+}
+
+// Use WeakMap for object references
+const objectMetadata = new WeakMap();
+
+function attachMetadata(obj, metadata) {
+  objectMetadata.set(obj, metadata);
+  // Automatically cleaned up when obj is garbage collected
+}
+```
+
+## Database Optimization
+
+Optimize database queries and connections:
+
+```javascript
+// Connection pooling
+const mysql = require('mysql2');
+
+const pool = mysql.createPool({
+  host: 'localhost',
+  user: 'user',
+  password: 'password',
+  database: 'mydb',
+  connectionLimit: 10,
+  queueLimit: 0
+});
+
+// Use prepared statements
+async function getUserById(id) {
+  const [rows] = await pool.execute(
+    'SELECT * FROM users WHERE id = ?',
+    [id]
+  );
+  return rows[0];
+}
+
+// Batch operations
+async function createUsers(users) {
+  const values = users.map(user => [user.name, user.email]);
+  await pool.execute(
+    'INSERT INTO users (name, email) VALUES ?',
+    [values]
+  );
+}
+
+// Use indexes effectively
+// CREATE INDEX idx_user_email ON users(email);
+// CREATE INDEX idx_user_status_created ON users(status, created_at);
+```
+
+## Caching Strategies
+
+Implement effective caching:
+
+```javascript
+const Redis = require('redis');
+const client = Redis.createClient();
+
+// In-memory cache for frequently accessed data
+const memoryCache = new Map();
+
+async function getUser(id) {
+  // Check memory cache first
+  if (memoryCache.has(id)) {
+    return memoryCache.get(id);
+  }
+  
+  // Check Redis cache
+  const cached = await client.get(`user:${id}`);
+  if (cached) {
+    const user = JSON.parse(cached);
+    memoryCache.set(id, user);
+    return user;
+  }
+  
+  // Fetch from database
+  const user = await getUserFromDB(id);
+  
+  // Cache in Redis (expires in 1 hour)
+  await client.setex(`user:${id}`, 3600, JSON.stringify(user));
+  
+  // Cache in memory
+  memoryCache.set(id, user);
+  
+  return user;
+}
+
+// Cache invalidation
+async function updateUser(id, updates) {
+  const user = await updateUserInDB(id, updates);
+  
+  // Invalidate caches
+  memoryCache.delete(id);
+  await client.del(`user:${id}`);
+  
+  return user;
+}
+```
+
+## Clustering and Worker Threads
+
+Scale across multiple cores:
+
+```javascript
+// cluster.js
+const cluster = require('cluster');
+const numCPUs = require('os').cpus().length;
+
+if (cluster.isMaster) {
+  console.log(`Master ${process.pid} is running`);
+  
+  // Fork workers
+  for (let i = 0; i < numCPUs; i++) {
+    cluster.fork();
+  }
+  
+  cluster.on('exit', (worker, code, signal) => {
+    console.log(`Worker ${worker.process.pid} died`);
+    cluster.fork(); // Restart worker
+  });
+} else {
+  // Worker process
+  require('./app.js');
+  console.log(`Worker ${process.pid} started`);
+}
+
+// worker-threads.js
+const { Worker, isMainThread, parentPort } = require('worker_threads');
+
+if (isMainThread) {
+  // Main thread
+  async function heavyTask(data) {
+    return new Promise((resolve, reject) => {
+      const worker = new Worker(__filename);
+      worker.postMessage(data);
+      worker.on('message', resolve);
+      worker.on('error', reject);
+    });
+  }
+} else {
+  // Worker thread
+  parentPort.on('message', (data) => {
+    const result = performHeavyComputation(data);
+    parentPort.postMessage(result);
+  });
+}
+```
+
+## Stream Processing
+
+Use streams for large data processing:
+
+```javascript
+const fs = require('fs');
+const { Transform } = require('stream');
+
+// Process large files without loading into memory
+const processLargeFile = () => {
+  const readStream = fs.createReadStream('large-file.txt');
+  const writeStream = fs.createWriteStream('processed-file.txt');
+  
+  const transformStream = new Transform({
+    transform(chunk, encoding, callback) {
+      // Process chunk
+      const processed = chunk.toString().toUpperCase();
+      callback(null, processed);
+    }
+  });
+  
+  readStream
+    .pipe(transformStream)
+    .pipe(writeStream);
+};
+
+// Streaming JSON processing
+const JSONStream = require('JSONStream');
+
+app.get('/large-dataset', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  
+  const stream = db.createReadStream()
+    .pipe(JSONStream.stringify())
+    .pipe(res);
+    
+  stream.on('error', (err) => {
+    res.status(500).json({ error: 'Stream error' });
+  });
+});
+```
+
+## Monitoring and Profiling
+
+Monitor performance in production:
+
+```javascript
+// Performance monitoring
+const performanceObserver = new PerformanceObserver((list) => {
+  for (const entry of list.getEntries()) {
+    console.log(`${entry.name}: ${entry.duration}ms`);
+  }
+});
+
+performanceObserver.observe({ entryTypes: ['measure'] });
+
+// Time critical operations
+function timedOperation(name, fn) {
+  performance.mark(`${name}-start`);
+  const result = fn();
+  performance.mark(`${name}-end`);
+  performance.measure(name, `${name}-start`, `${name}-end`);
+  return result;
+}
+
+// Memory usage monitoring
+setInterval(() => {
+  const usage = process.memoryUsage();
+  console.log(`Memory usage:
+    RSS: ${Math.round(usage.rss / 1024 / 1024)} MB
+    Heap Used: ${Math.round(usage.heapUsed / 1024 / 1024)} MB
+    Heap Total: ${Math.round(usage.heapTotal / 1024 / 1024)} MB
+  `);
+}, 60000);
+```
+
+## Best Practices Summary
+
+1. **Profile before optimizing** - Use tools like clinic.js
+2. **Avoid blocking the event loop** - Use async/await and workers
+3. **Implement proper caching** - Multiple levels of caching
+4. **Monitor memory usage** - Prevent leaks and optimize GC
+5. **Use connection pooling** - For databases and external services
+6. **Implement clustering** - Utilize all CPU cores
+7. **Use streams** - For large data processing
+8. **Monitor in production** - Use APM tools
+
+## Conclusion
+
+Node.js performance optimization requires understanding the event loop, memory management, and proper use of async patterns. Implement these techniques gradually and always measure the impact of your optimizations. 

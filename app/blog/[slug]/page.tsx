@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import Giscus from "@/components/ui/giscus";
+import Comments from "../../../components/ui/comments";
+import { CodeBlock } from "../../../components/ui/code-block";
 
 // @ts-ignore - content-collections types will be generated after build
 import { allPosts } from "content-collections";
@@ -46,13 +47,13 @@ export default async function BlogPost({ params }: BlogPostPageProps) {
       <div className="mb-8">
         <Link
           href="/"
-          className="inline-flex items-center text-blue-600 hover:text-blue-700 mb-6"
+          className="inline-flex items-center text-primary hover:text-primary/80 mb-6"
         >
-          ← Back to blog
+          ← Back to home
         </Link>
 
         <div className="space-y-4">
-          <div className="flex items-center space-x-2 text-sm text-gray-500">
+          <div className="flex items-center space-x-2 text-sm text-secondary-foreground">
             <time dateTime={post.date}>
               {new Date(post.date).toLocaleDateString("en-US", {
                 year: "numeric",
@@ -60,15 +61,13 @@ export default async function BlogPost({ params }: BlogPostPageProps) {
                 day: "numeric",
               })}
             </time>
-            <span>•</span>
-            <span>{post.author}</span>
           </div>
 
-          <h1 className="text-4xl font-bold text-gray-900 leading-tight">
+          <h1 className="text-4xl font-bold text-card-foreground leading-tight">
             {post.title}
           </h1>
 
-          <p className="text-xl text-gray-600 leading-relaxed">
+          <p className="text-xl text-secondary-foreground leading-relaxed">
             {post.description}
           </p>
 
@@ -76,7 +75,7 @@ export default async function BlogPost({ params }: BlogPostPageProps) {
             {post.tags.map((tag: string) => (
               <span
                 key={tag}
-                className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800"
+                className="border border-secondary inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-primary text-primary-foreground"
               >
                 {tag}
               </span>
@@ -85,19 +84,17 @@ export default async function BlogPost({ params }: BlogPostPageProps) {
         </div>
       </div>
 
-      <div className="prose prose-lg prose-slate max-w-none prose-headings:text-slate-900 prose-h1:text-4xl prose-h2:text-2xl prose-h3:text-xl prose-p:text-slate-700 prose-p:leading-7 prose-strong:text-slate-900 prose-code:text-sm prose-code:bg-slate-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-slate-900 prose-pre:text-slate-50">
-        <MDXContent code={post.mdx} />
+      <div className="prose prose-lg prose-slate max-w-none prose-headings:text-primary prose-h1:text-4xl prose-h2:text-2xl prose-h3:text-xl prose-p:text-slate-700 prose-p:leading-7 prose-strong:text-slate-900 prose-code:text-sm prose-code:bg-slate-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-slate-900 prose-pre:text-slate-50">
+        <MDXContent
+          code={post.mdx}
+          components={{
+            pre: CodeBlock,
+          }}
+        />
       </div>
 
       {/* Replace these with your actual GitHub repository details */}
-      <Giscus
-        repo="your-username/your-repo"
-        repoId="your-repo-id"
-        category="General"
-        categoryId="your-category-id"
-        mapping="pathname"
-        theme="light"
-      />
+      <Comments />
     </article>
   );
 }

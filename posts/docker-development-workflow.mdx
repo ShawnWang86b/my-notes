@@ -1,0 +1,647 @@
+---
+title: "Docker Development Workflow: From Dev to Production"
+description: "Master Docker for development environments and production deployments"
+date: "2024-03-01"
+author: "Tech Blogger"
+tags: ["docker", "devops", "containers", "development"]
+image: "/file.svg"
+---
+
+# Docker Development Workflow: From Dev to Production
+
+Docker revolutionizes how we develop, test, and deploy applications. Learn how to create an efficient Docker workflow for your projects.
+
+## Development Environment Setup
+
+### Basic Dockerfile
+
+```dockerfile
+# Multi-stage build for Node.js app
+FROM node:18-alpine AS base
+
+# Install dependencies only when needed
+FROM base AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --only=production && npm cache clean --force
+
+# Development stage
+FROM base AS dev
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+EXPOSE 3000
+CMD ["npm", "run", "dev"]
+
+# Build stage
+FROM base AS builder
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+# Production stage
+FROM base AS production
+WORKDIR /app
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/package.json ./package.json
+
+USER nextjs
+EXPOSE 3000
+ENV NODE_ENV=production
+CMD ["npm", "start"]
+```
+
+### Docker Compose for Development
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      target: dev
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://user:password@db:5432/myapp
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=myapp
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - app
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+```
+
+## Development Best Practices
+
+### .dockerignore File
+
+```dockerignore
+# .dockerignore
+node_modules
+npm-debug.log
+Dockerfile
+.dockerignore
+.git
+.gitignore
+README.md
+.env
+.env.local
+.env.production.local
+.env.development.local
+.nyc_output
+coverage
+.next
+out
+build
+dist
+```
+
+### Environment-Specific Configurations
+
+```yaml
+# docker-compose.override.yml (automatically loaded in development)
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      target: dev
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      - DEBUG=true
+      - HOT_RELOAD=true
+
+  db:
+    environment:
+      - POSTGRES_DB=myapp_dev
+    ports:
+      - "5432:5432"
+
+# docker-compose.prod.yml (for production)
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      target: production
+    restart: always
+    environment:
+      - NODE_ENV=production
+
+  db:
+    environment:
+      - POSTGRES_DB=myapp_prod
+    ports: [] # Don't expose ports in production
+```
+
+## Multi-Stage Builds
+
+### Optimized Python Dockerfile
+
+```dockerfile
+# Python multi-stage build
+FROM python:3.11-slim as base
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Development stage
+FROM base as development
+
+WORKDIR /app
+COPY requirements.txt requirements-dev.txt ./
+RUN pip install -r requirements-dev.txt
+
+COPY . .
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+
+# Production dependencies stage
+FROM base as deps
+
+WORKDIR /app
+COPY requirements.txt ./
+RUN pip install --no-deps -r requirements.txt
+
+# Production stage
+FROM python:3.11-slim as production
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+WORKDIR /app
+
+# Copy dependencies from deps stage
+COPY --from=deps /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=deps /usr/local/bin /usr/local/bin
+
+COPY . .
+RUN chown -R appuser:appuser /app
+
+USER appuser
+
+EXPOSE 8000
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "myapp.wsgi:application"]
+```
+
+## Container Orchestration
+
+### Docker Swarm Stack
+
+```yaml
+# docker-stack.yml
+version: '3.8'
+
+services:
+  app:
+    image: myapp:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL_FILE=/run/secrets/db_url
+    secrets:
+      - db_url
+    deploy:
+      replicas: 3
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    networks:
+      - app-network
+
+  db:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=myapp
+      - POSTGRES_USER_FILE=/run/secrets/db_user
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
+    secrets:
+      - db_user
+      - db_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    networks:
+      - app-network
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    configs:
+      - source: nginx_config
+        target: /etc/nginx/nginx.conf
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: on-failure
+    networks:
+      - app-network
+
+secrets:
+  db_url:
+    external: true
+  db_user:
+    external: true
+  db_password:
+    external: true
+
+configs:
+  nginx_config:
+    file: ./nginx.conf
+
+volumes:
+  postgres_data:
+
+networks:
+  app-network:
+    driver: overlay
+```
+
+## CI/CD Pipeline
+
+### GitHub Actions with Docker
+
+```yaml
+# .github/workflows/ci-cd.yml
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build test image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          target: dev
+          tags: myapp:test
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run tests
+        run: |
+          docker run --rm \
+            --network host \
+            -e DATABASE_URL=postgresql://postgres:postgres@localhost:5432/test_db \
+            myapp:test npm test
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          target: production
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Deploy to production
+        run: |
+          # Deploy using your preferred method
+          # (Docker Swarm, Kubernetes, etc.)
+          echo "Deploying to production..."
+```
+
+## Health Checks and Monitoring
+
+### Health Check Implementation
+
+```dockerfile
+# Add health check to Dockerfile
+FROM node:18-alpine
+
+# ... other instructions ...
+
+# Add health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD node healthcheck.js || exit 1
+
+EXPOSE 3000
+CMD ["npm", "start"]
+```
+
+```javascript
+// healthcheck.js
+const http = require('http');
+
+const options = {
+  hostname: 'localhost',
+  port: 3000,
+  path: '/health',
+  method: 'GET',
+  timeout: 2000
+};
+
+const request = http.request(options, (res) => {
+  if (res.statusCode === 200) {
+    process.exit(0);
+  } else {
+    process.exit(1);
+  }
+});
+
+request.on('error', () => {
+  process.exit(1);
+});
+
+request.on('timeout', () => {
+  request.destroy();
+  process.exit(1);
+});
+
+request.end();
+```
+
+### Monitoring with Prometheus
+
+```yaml
+# docker-compose.monitoring.yml
+version: '3.8'
+
+services:
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+
+volumes:
+  prometheus_data:
+  grafana_data:
+```
+
+## Development Commands
+
+### Useful Docker Commands
+
+```bash
+# Development workflow
+docker-compose up --build              # Build and start services
+docker-compose up -d                   # Start in detached mode
+docker-compose logs -f app             # Follow app logs
+docker-compose exec app sh             # Shell into app container
+docker-compose down -v                 # Stop and remove volumes
+
+# Production deployment
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+# Clean up
+docker system prune -f                 # Remove unused containers/images
+docker volume prune -f                 # Remove unused volumes
+docker image prune -a -f               # Remove unused images
+
+# Debugging
+docker-compose ps                      # Show running containers
+docker-compose top                     # Show processes
+docker stats                          # Show container resource usage
+
+# Database operations
+docker-compose exec db psql -U user myapp  # Connect to database
+docker-compose exec db pg_dump -U user myapp > backup.sql
+```
+
+### Development Scripts
+
+```json
+{
+  "scripts": {
+    "docker:dev": "docker-compose up --build",
+    "docker:prod": "docker-compose -f docker-compose.yml -f docker-compose.prod.yml up --build",
+    "docker:test": "docker-compose -f docker-compose.test.yml up --build --abort-on-container-exit",
+    "docker:clean": "docker system prune -f && docker volume prune -f",
+    "docker:shell": "docker-compose exec app sh",
+    "docker:logs": "docker-compose logs -f app",
+    "docker:db": "docker-compose exec db psql -U user myapp"
+  }
+}
+```
+
+## Security Best Practices
+
+### Secure Dockerfile
+
+```dockerfile
+# Security-focused Dockerfile
+FROM node:18-alpine
+
+# Don't run as root
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S nextjs -u 1001
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production && npm cache clean --force
+
+# Copy source code
+COPY --chown=nextjs:nodejs . .
+
+# Remove unnecessary packages
+RUN apk del --purge
+
+# Switch to non-root user
+USER nextjs
+
+# Expose port
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s CMD node healthcheck.js
+
+# Start application
+CMD ["npm", "start"]
+```
+
+## Conclusion
+
+Docker provides a powerful foundation for modern development workflows. By implementing proper containerization strategies, you can achieve:
+
+- Consistent development environments
+- Simplified deployment processes
+- Better resource utilization
+- Improved scalability and maintainability
+
+Start with basic containerization and gradually adopt advanced patterns as your needs grow. 

@@ -1,0 +1,521 @@
+---
+title: "GraphQL vs REST: Choosing the Right API Architecture"
+description: "Compare GraphQL and REST APIs to make informed decisions for your next project"
+date: "2024-02-25"
+author: "Tech Blogger"
+tags: ["graphql", "rest", "api", "backend", "architecture"]
+image: "/globe.svg"
+---
+
+# GraphQL vs REST: Choosing the Right API Architecture
+
+When building APIs, choosing between GraphQL and REST is a crucial architectural decision. Let's explore both approaches to help you make the right choice.
+
+## REST API Fundamentals
+
+REST (Representational State Transfer) follows standard HTTP methods and URL patterns:
+
+```javascript
+// REST API endpoints
+GET    /api/users           // Get all users
+GET    /api/users/123       // Get specific user
+POST   /api/users           // Create user
+PUT    /api/users/123       // Update user
+DELETE /api/users/123       // Delete user
+
+// Example REST implementation (Express.js)
+const express = require('express');
+const app = express();
+
+// Get all users
+app.get('/api/users', async (req, res) => {
+  const users = await User.findAll();
+  res.json(users);
+});
+
+// Get user by ID
+app.get('/api/users/:id', async (req, res) => {
+  const user = await User.findById(req.params.id);
+  if (!user) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  res.json(user);
+});
+
+// Create user
+app.post('/api/users', async (req, res) => {
+  const user = await User.create(req.body);
+  res.status(201).json(user);
+});
+```
+
+## GraphQL Fundamentals
+
+GraphQL provides a query language and runtime for APIs:
+
+```graphql
+# GraphQL Schema
+type User {
+  id: ID!
+  name: String!
+  email: String!
+  posts: [Post!]!
+  profile: Profile
+}
+
+type Post {
+  id: ID!
+  title: String!
+  content: String!
+  author: User!
+  createdAt: String!
+}
+
+type Query {
+  users: [User!]!
+  user(id: ID!): User
+  posts: [Post!]!
+}
+
+type Mutation {
+  createUser(input: CreateUserInput!): User!
+  updateUser(id: ID!, input: UpdateUserInput!): User!
+  deleteUser(id: ID!): Boolean!
+}
+```
+
+```javascript
+// GraphQL resolvers
+const resolvers = {
+  Query: {
+    users: () => User.findAll(),
+    user: (_, { id }) => User.findById(id),
+    posts: () => Post.findAll()
+  },
+  
+  Mutation: {
+    createUser: (_, { input }) => User.create(input),
+    updateUser: (_, { id, input }) => User.update(id, input),
+    deleteUser: (_, { id }) => User.delete(id)
+  },
+  
+  User: {
+    posts: (user) => Post.findByUserId(user.id),
+    profile: (user) => Profile.findByUserId(user.id)
+  }
+};
+
+// Apollo Server setup
+const { ApolloServer } = require('apollo-server-express');
+
+const server = new ApolloServer({
+  typeDefs,
+  resolvers
+});
+
+server.applyMiddleware({ app });
+```
+
+## Data Fetching Comparison
+
+### REST: Multiple Requests
+
+```javascript
+// REST client - multiple requests needed
+const fetchUserData = async (userId) => {
+  // Request 1: Get user
+  const userResponse = await fetch(`/api/users/${userId}`);
+  const user = await userResponse.json();
+  
+  // Request 2: Get user's posts
+  const postsResponse = await fetch(`/api/users/${userId}/posts`);
+  const posts = await postsResponse.json();
+  
+  // Request 3: Get user's profile
+  const profileResponse = await fetch(`/api/users/${userId}/profile`);
+  const profile = await profileResponse.json();
+  
+  return { user, posts, profile };
+};
+
+// Over-fetching: Getting more data than needed
+const users = await fetch('/api/users'); // Returns all user fields
+// But we only need name and email for a list view
+```
+
+### GraphQL: Single Request
+
+```graphql
+# GraphQL query - single request with exact data needed
+query GetUserData($userId: ID!) {
+  user(id: $userId) {
+    id
+    name
+    email
+    posts {
+      id
+      title
+      createdAt
+    }
+    profile {
+      bio
+      avatar
+    }
+  }
+}
+```
+
+```javascript
+// GraphQL client
+const { request, gql } = require('graphql-request');
+
+const GET_USER_DATA = gql`
+  query GetUserData($userId: ID!) {
+    user(id: $userId) {
+      id
+      name
+      email
+      posts {
+        id
+        title
+        createdAt
+      }
+      profile {
+        bio
+        avatar
+      }
+    }
+  }
+`;
+
+const userData = await request('/graphql', GET_USER_DATA, { userId: '123' });
+```
+
+## Caching Strategies
+
+### REST Caching
+
+```javascript
+// HTTP caching with REST
+app.get('/api/users/:id', (req, res) => {
+  res.set({
+    'Cache-Control': 'public, max-age=300', // 5 minutes
+    'ETag': generateETag(user)
+  });
+  res.json(user);
+});
+
+// Redis caching
+const cache = require('redis').createClient();
+
+app.get('/api/users/:id', async (req, res) => {
+  const cacheKey = `user:${req.params.id}`;
+  
+  // Check cache first
+  const cached = await cache.get(cacheKey);
+  if (cached) {
+    return res.json(JSON.parse(cached));
+  }
+  
+  // Fetch from database
+  const user = await User.findById(req.params.id);
+  
+  // Cache for 5 minutes
+  await cache.setex(cacheKey, 300, JSON.stringify(user));
+  
+  res.json(user);
+});
+```
+
+### GraphQL Caching
+
+```javascript
+// Apollo Server with caching
+const { ApolloServer } = require('apollo-server-express');
+const { RedisCache } = require('apollo-server-cache-redis');
+
+const server = new ApolloServer({
+  typeDefs,
+  resolvers,
+  cache: new RedisCache({
+    host: 'localhost',
+    port: 6379,
+  }),
+  cacheControl: {
+    defaultMaxAge: 300, // 5 minutes
+  }
+});
+
+// Field-level caching
+const resolvers = {
+  Query: {
+    user: async (_, { id }, { dataSources }) => {
+      return dataSources.userAPI.getUserById(id);
+    }
+  },
+  
+  User: {
+    posts: async (user, _, { dataSources }) => {
+      // Cache posts separately
+      return dataSources.postAPI.getPostsByUserId(user.id);
+    }
+  }
+};
+
+// Automatic Persisted Queries (APQ)
+const server = new ApolloServer({
+  typeDefs,
+  resolvers,
+  persistedQueries: {
+    cache: new RedisCache()
+  }
+});
+```
+
+## Error Handling
+
+### REST Error Handling
+
+```javascript
+// REST error responses
+app.get('/api/users/:id', async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    
+    if (!user) {
+      return res.status(404).json({
+        error: 'User not found',
+        code: 'USER_NOT_FOUND'
+      });
+    }
+    
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({
+      error: 'Internal server error',
+      code: 'INTERNAL_ERROR'
+    });
+  }
+});
+
+// Client error handling
+const response = await fetch('/api/users/123');
+
+if (!response.ok) {
+  if (response.status === 404) {
+    console.log('User not found');
+  } else if (response.status === 500) {
+    console.log('Server error');
+  }
+  return;
+}
+
+const user = await response.json();
+```
+
+### GraphQL Error Handling
+
+```javascript
+// GraphQL error handling
+const resolvers = {
+  Query: {
+    user: async (_, { id }) => {
+      const user = await User.findById(id);
+      
+      if (!user) {
+        throw new UserInputError('User not found', {
+          code: 'USER_NOT_FOUND',
+          userId: id
+        });
+      }
+      
+      return user;
+    }
+  }
+};
+
+// Custom error class
+class UserInputError extends Error {
+  constructor(message, properties) {
+    super(message);
+    this.extensions = {
+      code: 'USER_INPUT_ERROR',
+      ...properties
+    };
+  }
+}
+
+// Client error handling
+const { data, errors } = await client.query({
+  query: GET_USER,
+  variables: { id: '123' },
+  errorPolicy: 'all' // Return partial data with errors
+});
+
+if (errors) {
+  errors.forEach(error => {
+    if (error.extensions.code === 'USER_NOT_FOUND') {
+      console.log('User not found');
+    }
+  });
+}
+```
+
+## Real-time Features
+
+### REST with Server-Sent Events
+
+```javascript
+// Server-Sent Events for real-time updates
+app.get('/api/users/:id/events', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive'
+  });
+  
+  const userId = req.params.id;
+  
+  // Listen for user updates
+  const listener = (data) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+  
+  userUpdateEmitter.on(userId, listener);
+  
+  req.on('close', () => {
+    userUpdateEmitter.off(userId, listener);
+  });
+});
+
+// Client
+const eventSource = new EventSource('/api/users/123/events');
+eventSource.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  updateUI(data);
+};
+```
+
+### GraphQL Subscriptions
+
+```graphql
+# GraphQL subscriptions
+type Subscription {
+  userUpdated(id: ID!): User!
+  postAdded: Post!
+  messageAdded(chatId: ID!): Message!
+}
+```
+
+```javascript
+// GraphQL subscription resolver
+const { PubSub } = require('apollo-server-express');
+const pubsub = new PubSub();
+
+const resolvers = {
+  Subscription: {
+    userUpdated: {
+      subscribe: (_, { id }) => pubsub.asyncIterator(`USER_UPDATED_${id}`)
+    },
+    
+    postAdded: {
+      subscribe: () => pubsub.asyncIterator('POST_ADDED')
+    }
+  },
+  
+  Mutation: {
+    updateUser: async (_, { id, input }) => {
+      const user = await User.update(id, input);
+      
+      // Publish update
+      pubsub.publish(`USER_UPDATED_${id}`, { userUpdated: user });
+      
+      return user;
+    }
+  }
+};
+
+// Client subscription
+const subscription = gql`
+  subscription UserUpdated($id: ID!) {
+    userUpdated(id: $id) {
+      id
+      name
+      email
+    }
+  }
+`;
+
+client.subscribe({
+  query: subscription,
+  variables: { id: '123' }
+}).subscribe({
+  next: (data) => updateUI(data.userUpdated)
+});
+```
+
+## When to Choose REST
+
+✅ **Choose REST when:**
+
+- Building simple CRUD applications
+- Team is familiar with REST conventions
+- Caching requirements are straightforward
+- Working with existing REST infrastructure
+- Building public APIs for third-party integration
+- Need predictable URL patterns for SEO
+
+```javascript
+// Example: Simple blog API
+GET    /api/posts           // List posts
+GET    /api/posts/my-post   // Get specific post
+POST   /api/posts           // Create post
+PUT    /api/posts/my-post   // Update post
+DELETE /api/posts/my-post   // Delete post
+```
+
+## When to Choose GraphQL
+
+✅ **Choose GraphQL when:**
+
+- Frontend needs vary significantly
+- Mobile applications require data efficiency
+- Multiple clients consume the same API
+- Real-time features are important
+- Team can handle the additional complexity
+- Rapid frontend development is priority
+
+```graphql
+# Example: Complex social media query
+query GetFeed($userId: ID!, $limit: Int!) {
+  user(id: $userId) {
+    feed(limit: $limit) {
+      id
+      content
+      author {
+        name
+        avatar
+      }
+      likes {
+        count
+        byCurrentUser
+      }
+      comments(limit: 3) {
+        content
+        author {
+          name
+        }
+      }
+    }
+  }
+}
+```
+
+## Conclusion
+
+Both REST and GraphQL have their strengths:
+
+- **REST** is mature, simple, and well-understood with excellent caching
+- **GraphQL** offers flexibility, efficiency, and powerful real-time features
+
+Consider your team's expertise, project requirements, and long-term maintenance when making the choice. Many successful applications use both: REST for simple operations and GraphQL for complex data requirements. 
